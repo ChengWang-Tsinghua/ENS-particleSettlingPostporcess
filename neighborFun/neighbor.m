@@ -1,21 +1,33 @@
-function [neighborAll, neighborLayer] = neighbor(particle_part,tracer_tracks,Rmin,Rmax,kexp)
+function neighborAll = neighbor(particle_part, tracer_part, Rmin, Rmax, kexp)
+% NEIGHBOR computes neighbors for particles in a specific frame range.
+%   neighborAll = NEIGHBOR(particle_part, tracer_part, Rmin, Rmax, kexp)
+%   calculates neighbors based on input parameters and stores the results in
+%   arrays 'neighborAll'.
+%
+%   Input:
+%       particle_part - Information about particles.
+%       tracer_part   - Information about tracers.
+%       Rmin, Rmax    - Distance constraints for neighbor search.
+%       kexp          - Frame-related parameter for calculations.
+%
+%   Output:
+%       neighborAll   - Array containing all neighbor indices for each particle.
 
-%%
-Nframemax = 1e6;
+    % Maximum number of frames
+    Nframemax = 1e6;
 
-%%
+    % Find indices of particles within the specified frame range
+    idxp = find(particle_part.Tf < kexp * Nframemax & particle_part.Tf > (kexp - 1) * Nframemax);
 
-part = convertTrack(particle_part);
-tracer = convertTrack(tracer_tracks);
+    % Iterate over particles within the specified frame range
+    for i = 1:numel(idxp)
+        idx1 = idxp(i);
 
-%%
-idxp = find(part.Tf<kexp*Nframemax & part.Tf>(kexp-1)*Nframemax);
+        % Find indices of tracers in the current frame
+        idx2 = find(tracer_part.Tf == particle_part.Tf(idx1));
 
-for i = 1:numel(idxp)
-    idx1 = idxp(i);
-
-    %% find neighbors of current frame
-    idx2 = find(tracer.Tf==part.Tf(idx1));
-    [neighborAll(i,:), neighborLayer(i,:)] = neighborIdx(part,tracer,idx1,idx2,Rmin,Rmax);
-    
+        % Calculate neighbors using a helper function
+        neighborAll(i,:) = neighborIdx2(particle_part, tracer_part, idx1, idx2, Rmin, Rmax);
+    end
 end
+
