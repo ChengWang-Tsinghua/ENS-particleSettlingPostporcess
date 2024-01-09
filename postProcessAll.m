@@ -11,6 +11,10 @@ clear all;clc;close all
 % like Re_lambda) and to see their interactions (slip velocity)
 
 %% settings for plots
+
+Fs = 2996;
+Nexp = 100;
+
 addpath(genpath('C:\Users\ChengWang\Desktop\SDT_EXP'));
 mycolormap = mycolor('#063970','#e28743');%('#063970','#eeeee4','#e28743')
 color1 = '#000000';
@@ -32,60 +36,23 @@ set(groot, 'defaultTextFontSize',15)
 
 %% Tracer: output path
 fpathT = ['.' filesep 'tracers' filesep];
+fpathT_STB = ['.' filesep 'tracers' filesep 'Seperate_Files_STB' filesep];
 
 fout_lagr = [fpathT 'Figures_Lagr'];
-fout_euler = [fpathT 'Figures_Euler'];
-fout_euler_subsmean = [fpathT 'Figures_Euler_subsMean'];
+fout_tracks = [fpathT 'Tracks'];
+fout_LagrangianStats = [fpathT 'LagrangianStats'];
 
 mkdir(fout_lagr)
-mkdir(fout_euler)
-mkdir(fout_euler_subsmean)
+mkdir(fout_tracks)
+mkdir(fout_LagrangianStats)
 
-%% Tracer: load Lavision output
-load([fpathT filesep 'STB_Tracer']);
-
-%% Tracer: set frame rate
-Fs = 4230;
-
-%% Tracer: remove the frames at the beginning
-frame0 = 0;
-part(1:frame0-1)=[];
-
-%% Tracer: build track structure 
-track = part2track(part);
-
-%% Tracer: finding long tracks
-L = arrayfun(@(X)(numel(X.X)),track);
-long_thres = 10;
-Ilong = find(L>=long_thres);
 
 %% Tracer: find proper filter width
-[s(1), m(1), w]=findFilterWidth_PTV(track(Ilong),'X');
-[s(2), m(2), w]=findFilterWidth_PTV(track(Ilong),'Y');
-[s(3), m(3), w]=findFilterWidth_PTV(track(Ilong),'Z');
-
-%% Tracer: find optimal filter length
-figure;
-yyaxis left
-loglog(w,s(1).vx,'d-',Color=color3(1,:));hold on;
-loglog(w,s(2).vx,'d-',Color=color3(2,:));
-loglog(w,s(3).vx,'d-',Color=color3(3,:));
-hold off
-
-yyaxis right
-loglog(w,s(1).ax,'o-',Color=color3(1,:));hold on;
-loglog(w,s(2).ax,'o-',Color=color3(2,:));
-loglog(w,s(3).ax,'o-',Color=color3(3,:));
-
-legend('$u_x$','$u_y$','$u_z$','$a_x$','$a_y$','$a_z$');
-% title('$\sigma(w)$')
-xlabel('$w$')
-yyaxis left
-ylabel('$\sigma_{v}$')
-yyaxis right
-ylabel('$\sigma_{a}$')
-grid on
-axis padded
+ifParticle = 0;
+frame0 = 0;
+long_thres = 5;
+[track,Ilong] = buildTracks(fpathT_STB,'STB_1.mat',ifParticle,frame0,long_thres);
+[s,m,w] = findOptimalFilterWidth(track,Ilong);
 
 %% Tracer: set values for gaussian filter
 wopt = 6;
@@ -95,15 +62,27 @@ lopt = 20;
 plot([wopt wopt],ylim,'k--')
 savefig_custom(fout_lagr,'Std',8,7)
 
-%% Tracer: estimate smoothed tracks with optimal filter width
-tracklong_tracers=calcVelLEM(track(Ilong),wopt,lopt,Fs);
-Ine=arrayfun(@(X)(~isempty(X.Vx)),tracklong_tracers)==1;
-tracklong_tracers = tracklong_tracers(Ine);
-save([fpathT 'tracks.mat'],'long_thres','tracklong_tracers','wopt','lopt','Fs')
+%% Tracer: iteration over each experiments
+% ifParticle = 0;
+% frame0 = 0;
+% long_thres = 10;
+for i = 1:Nexp
+    fnamein = ['STB_' num2str(i) '.mat'];
+    [track,Ilong] = buildTracks(fpathT_STB,fnamein,ifParticle,frame0,long_thres);
+    
+    % Particle: Estimate smoothed tracks with optimal filter width
+    tracklong_tracers=calcVelLEM(track(Ilong),wopt,lopt,Fs);
+    Ine=arrayfun(@(X)(~isempty(X.Vx)),tracklong_tracers)==1;
+    tracklong_tracers = tracklong_tracers(Ine);
 
-save([fpathT 'LagrangianStats.mat'],'s','w','wopt','lopt')
-
-clear long_thres track Ilong s m w wopt lopt Ine part
+    fnameout1 = ['tracks_' num2str(i) '.mat'];
+    save([fout_tracks filesep fnameout1],'long_thres','tracklong_tracers','wopt','lopt','Fs')
+    
+    fnameout2 = ['LagrangianStats_' num2str(i) '.mat'];
+    save([fout_LagrangianStats filesep fnameout2],'s','w','wopt','lopt')
+    
+    clear track Ilong Ine
+end
 
 %% Tracer: velocity and acceleration pdfs
 Nbins = 256; % bins for PDF
@@ -323,7 +302,7 @@ find_optimal_ndt(tracklong_tracers,nmaxdt,nmaxtau,'Z',1)
 clear nmaxtau nmaxtau
 
 %% Tracer: correlation function -- dt method (denosied)
-ndts = [10 10 10]; % start points of correlation function ndt
+ndts = [8 8 8]; % start points of correlation function ndt
 ndtl = [10 10 10]; % length of correlation function ndt
 
 disp('calculating Correlation functions -- dt method')
@@ -366,6 +345,11 @@ save([fpathT 'LagrangianStats.mat'],'LagragianStats','-append')
 disp('---- Lagrangian Stats done ----')
 
 
+%% Tracer: path
+fout_euler = [fpathT 'Figures_Euler'];
+fout_euler_subsmean = [fpathT 'Figures_Euler_subsMean'];
+mkdir(fout_euler)
+mkdir(fout_euler_subsmean)
 %% Tracer: Eulerian statistics of RAW fields  
 tic
 [eulerStats,pair]= twoPointsEulerianStats_Mica_Speedup(tracklong_tracers,[0.5 80],100,0,0);
@@ -431,14 +415,39 @@ save([fpathT 'EulerianStats_subsMean.mat'],'eulerStats_subsMean')
 save([fpathT 'EulerianPair_subsMean.mat'],'pair_subsMean','-v7.3')
 toc
 
+%% clear
+clear
+
+Fs = 2996;
+
+fpathT = ['.' filesep 'tracers' filesep];
+
+addpath(genpath('C:\Users\ChengWang\Desktop\SDT_EXP'));
+mycolormap = mycolor('#063970','#e28743');%('#063970','#eeeee4','#e28743')
+color1 = '#000000';
+color3 = [mycolormap(1,:);mycolormap((size(mycolormap,1)+1)/2,:);mycolormap(end,:)];
+color5 = [mycolormap(1,:);mycolormap(round((size(mycolormap,1)+1)/4),:);mycolormap(round(2*(size(mycolormap,1)+1)/4),:);mycolormap(round(3*(size(mycolormap,1)+1)/4),:);mycolormap(end,:)];
+set(groot, 'defaultAxesTickLabelInterpreter','latex'); 
+set(groot, 'defaultTextInterpreter','latex');
+set(groot, 'defaultLegendInterpreter','latex');
+set(groot, 'defaultLegendLocation','best');
+set(groot, 'defaultAxesTitleFontWeight','bold')
+set(groot,'defaultLegendAutoUpdate','off')
+
+set(groot, 'defaultLineLineWidth',2)
+set(groot,'defaultLineMarkerSize',8)
+set(groot, 'defaultAxesFontSize',18)
+set(groot, 'defaultLegendFontSize',12)
+set(groot, 'defaultTextFontSize',15)
 %% Tracer: Eulerian plots of RAW or RMS field
 ifsubsMean = 1;
 if ifsubsMean == 0
     load([fpathT 'EulerianStats.mat'])
+    fout_euler = [fpathT 'Figures_Euler'];
 else
     load([fpathT 'EulerianStats_subsMean.mat'])
     eulerStats = eulerStats_subsMean;
-    fout_euler = fout_euler_subsmean;
+    fout_euler = [fpathT 'Figures_Euler_subsMean'];
 end
 %% Tracer: Eulerian plots: check stationary
 
@@ -503,15 +512,15 @@ loglog(eulerStats.r,eulerStats.S2x,'d-',Color=color3(1,:));hold on
 loglog(eulerStats.r,eulerStats.S2y,'d-',Color=color3(2,:));
 loglog(eulerStats.r,eulerStats.S2z,'d-',Color=color3(3,:));
 
-loglog(eulerStats.r,7e3*eulerStats.r.^(2/3),'--',Color=color1)
-loglog(eulerStats.r(end-30:end),7e3*eulerStats.r(end-30:end).^(1/3),'--',Color=color1)
+loglog(eulerStats.r,2e4*eulerStats.r.^(2/3),'--',Color=color1)
+% loglog(eulerStats.r(end-30:end),7e3*eulerStats.r(end-30:end).^(1/3),'--',Color=color1)
 
 legend('x','y','z')
 % title('$S_2^E$')
 ylabel('$S_2^E$')
 xlabel('$r/mm$')
-text(3,3e4,'$r^{2/3}$',FontSize=18,FontWeight='bold')
-text(30,1.5e4,'$r^{1/3}$',FontSize=18,FontWeight='bold')
+text(3,6e4,'$r^{2/3}$',FontSize=18,FontWeight='bold')
+% text(30,1.5e4,'$r^{1/3}$',FontSize=18,FontWeight='bold')
 grid on
 axis padded
 
@@ -633,68 +642,46 @@ grid on;axis padded
 
 savefig_custom(fout_euler,'Epsilon',8,7)
 
-%% !!!!!!! clear workspace !!!!!!! 
+%% clear
 clear
 
-%% Particle: input
-Fs = 4230;
+Fs = 2996;
+Nexp = 100;
 
+addpath(genpath('C:\Users\ChengWang\Desktop\SDT_EXP'));
 mycolormap = mycolor('#063970','#e28743');%('#063970','#eeeee4','#e28743')
 color1 = '#000000';
 color3 = [mycolormap(1,:);mycolormap((size(mycolormap,1)+1)/2,:);mycolormap(end,:)];
+color5 = [mycolormap(1,:);mycolormap(round((size(mycolormap,1)+1)/4),:);mycolormap(round(2*(size(mycolormap,1)+1)/4),:);mycolormap(round(3*(size(mycolormap,1)+1)/4),:);mycolormap(end,:)];
+set(groot, 'defaultAxesTickLabelInterpreter','latex'); 
+set(groot, 'defaultTextInterpreter','latex');
+set(groot, 'defaultLegendInterpreter','latex');
+set(groot, 'defaultLegendLocation','best');
+set(groot, 'defaultAxesTitleFontWeight','bold')
+set(groot,'defaultLegendAutoUpdate','off')
+
+set(groot, 'defaultLineLineWidth',2)
+set(groot,'defaultLineMarkerSize',8)
+set(groot, 'defaultAxesFontSize',18)
+set(groot, 'defaultLegendFontSize',12)
+set(groot, 'defaultTextFontSize',15)
 
 %% Particle: output path
 fpathP = ['.' filesep 'particle' filesep];
+fpathP_STB = ['.' filesep 'particle' filesep 'Seperate_Files_STB' filesep];
+
 fout_lagr = [fpathP 'Figures_Lagr'];
+fout_tracks = [fpathP 'Tracks'];
+fout_LagrangianStats = [fpathP 'LagrangianStats'];
 mkdir(fout_lagr)
-
-%% Particle: load Lavision output
-load([fpathP filesep 'STB_Particle']);
-
-%% Particle: remove fields (Lavision output)
-fields = {'Vx','Vy','Vz','V','Ax','Ay','Az','A'};
-part = rmfield(part,fields);
-clear fields
-
-%% Particle: remove the frames at the beginning
-frame0 = 0;
-part(1:frame0-1)=[];
-
-%% Particle: build track structure 
-track = part2track(part);
-
-%% Particle: finding long tracks
-L = arrayfun(@(X)(numel(X.X)),track);
-long_thres = 10;
-Ilong = find(L>=long_thres);
-
+mkdir(fout_tracks)
+mkdir(fout_LagrangianStats)
 %% Particle: find proper filter width
-[s(1), m(1), w]=findFilterWidth_PTV(track(Ilong),'X');
-[s(2), m(2), w]=findFilterWidth_PTV(track(Ilong),'Y');
-[s(3), m(3), w]=findFilterWidth_PTV(track(Ilong),'Z');
-
-%% Particle: find optimal filter length
-figure;
-yyaxis left
-loglog(w,s(1).vx,'d-',Color=color3(1,:));hold on;
-loglog(w,s(2).vx,'d-',Color=color3(2,:));
-loglog(w,s(3).vx,'d-',Color=color3(3,:));
-hold off
-
-yyaxis right
-loglog(w,s(1).ax,'o-',Color=color3(1,:));hold on;
-loglog(w,s(2).ax,'o-',Color=color3(2,:));
-loglog(w,s(3).ax,'o-',Color=color3(3,:));
-
-legend('$u_x$','$u_y$','$u_z$','$a_x$','$a_y$','$a_z$');
-% title('$\sigma(w)$')
-xlabel('$w$')
-yyaxis left
-ylabel('$\sigma_{v}$')
-yyaxis right
-ylabel('$\sigma_{a}$')
-grid on
-axis padded
+ifParticle = 1;
+frame0 = 0;
+long_thres = 5;
+[track,Ilong] = buildTracks(fpathP_STB,'STB_1.mat',ifParticle,frame0,long_thres);
+[s,m,w] = findOptimalFilterWidth(track,Ilong);
 
 %% Particle: set values for gaussian filter
 wopt = 6;
@@ -704,26 +691,36 @@ lopt = 20;
 plot([wopt wopt],ylim,'--',Color=color1)
 savefig_custom(fout_lagr,'Std',8,7)
 
-%% Particle: Estimate smoothed tracks with optimal filter width
-tracklong_particle=calcVelLEM(track(Ilong),wopt,lopt,Fs);
-Ine=arrayfun(@(X)(~isempty(X.Vx)),tracklong_particle)==1;
-tracklong_particle = tracklong_particle(Ine);
-save([ fpathP 'tracks.mat'],'long_thres','tracklong_particle','wopt','lopt','Fs')
+%% Particle: iteration over each experiments
+for i = 1:Nexp
+    fnamein = ['STB_' num2str(i) '.mat'];
+    [track,Ilong] = buildTracks(fpathP_STB,fnamein,ifParticle,frame0,long_thres);
+    
+    % Particle: Estimate smoothed tracks with optimal filter width
+    tracklong_particle=calcVelLEM(track(Ilong),wopt,lopt,Fs);
+    Ine=arrayfun(@(X)(~isempty(X.Vx)),tracklong_particle)==1;
+    tracklong_particle = tracklong_particle(Ine);
 
-save([ fpathP 'LagrangianStats.mat'],'s','w','wopt','lopt')
+    fnameout1 = ['tracks_' num2str(i) '.mat'];
+    save([fout_tracks filesep fnameout1],'long_thres','tracklong_particle','wopt','lopt','Fs')
+    
+    fnameout2 = ['LagrangianStats_' num2str(i) '.mat'];
+    save([fout_LagrangianStats filesep fnameout2],'s','w','wopt','lopt')
+    
+    clear track Ilong Ine
 
-clear long_thres track Ilong s m w wopt lopt Ine part
+end
 
 %% Particle: plot trajectory, V(t), A(t)
-part_particle_filtered = track2part(tracklong_particle,{'Tf','Xf','Yf','Zf','Vx','Vy','Vz','Ax','Ay','Az'},1);
+particle_part = track2part(tracklong_particle,{'Tf','Xf','Yf','Zf','Vx','Vy','Vz','Ax','Ay','Az'},1);
 
 fout_traj = [ fpathP './Figures_traj'];
-titlestring = '$1g-with Turb.(12V4kHz)$';
-axisrange_traj = [-5 25 -18 10 -40 40];
+titlestring = '$1g-with Turb.(15V3kHz)$';
+axisrange_traj = [-20 10 -20 10 -40 40];
 axisrange_vat = [0.05 0.3];
 
-plot_traj(part_particle_filtered,titlestring,axisrange_traj,1,fout_traj)
-plot_vadiffusion(part_particle_filtered,axisrange_vat,Fs,1,fout_traj)
+plot_traj(particle_part,titlestring,axisrange_traj,1,fout_traj)
+plot_vadiffusion(particle_part,axisrange_vat,Fs,1,fout_traj)
 
 clear fout_traj titlestring axisrange_traj axisrange_vat
 
@@ -985,23 +982,39 @@ savefig_custom(fout_lagr,'dtCorr',8,7)
 save([fpathP 'LagrangianStats.mat'],'LagragianStats','-append')
 disp('---- Lagrangian Stats done ----')
 
-%% !!!!!!! clear workspace !!!!!!! 
-clear
+%% clear
+clear;clc
 
-%% BOTH: inputs
-Fs = 4230;
+Fs = 2996;
+Nexp = 100;
 
+addpath(genpath('C:\Users\ChengWang\Desktop\SDT_EXP'));
 mycolormap = mycolor('#063970','#e28743');%('#063970','#eeeee4','#e28743')
+mycolormap2 = mycolor('#FFFFFF','#0000B2');
 color1 = '#000000';
 color3 = [mycolormap(1,:);mycolormap((size(mycolormap,1)+1)/2,:);mycolormap(end,:)];
 color5 = [mycolormap(1,:);mycolormap(round((size(mycolormap,1)+1)/4),:);mycolormap(round(2*(size(mycolormap,1)+1)/4),:);mycolormap(round(3*(size(mycolormap,1)+1)/4),:);mycolormap(end,:)];
+set(groot, 'defaultAxesTickLabelInterpreter','latex'); 
+set(groot, 'defaultTextInterpreter','latex');
+set(groot, 'defaultLegendInterpreter','latex');
+set(groot, 'defaultLegendLocation','best');
+set(groot, 'defaultAxesTitleFontWeight','bold')
+set(groot,'defaultLegendAutoUpdate','off')
 
+set(groot, 'defaultLineLineWidth',2)
+set(groot,'defaultLineMarkerSize',8)
+set(groot, 'defaultAxesFontSize',18)
+set(groot, 'defaultLegendFontSize',12)
+set(groot, 'defaultTextFontSize',15)
+%% BOTH: path setting
 fpathT = ['.' filesep 'tracers' filesep];
-load([fpathT filesep 'EulerianStats.mat']);
-load([fpathT 'tracks.mat'],'tracklong_tracers')
 fpathP = ['.' filesep 'particle' filesep];
-load([fpathP 'tracks.mat'],'tracklong_particle')
 
+fpathT_tracks = ['.' filesep 'tracers' filesep 'Tracks' filesep];
+fpathP_tracks = ['.' filesep 'particle' filesep 'Tracks' filesep];
+
+fpathP_slipVeloData = ['.' filesep 'slipVeloData100-rotated-001-all-2'];
+mkdir(fpathP_slipVeloData)
 %% BOTH: experiment parameters
 mp = 0.0048e-3;%kg
 dp = 1.0094e-3;%m
@@ -1013,122 +1026,135 @@ Vs = 0.4; % abs, determine from the plots of V(t) and Vs(t)
 epsilon = 0.15; %determine from Eulerian plots of tracers
 sigmau = sigmau2.all; % rms velcity, determine from the Eulerian fields, unit: mm/s
 
-params = expParam(Fs,mp,dp,rhof,nv,geff,taup,Vs,epsilon,sigmau)
+params = expParam(Fs,mp,dp,rhof,nv,geff,taup,Vs,epsilon,sigmau);
 save([fpathP './expParams.mat'],'params');
 
 clear mp dp rhof nv geff taup 
 
-%% BOTH: slip velocity: find terminal state where a ~= 0
-[maxTimeLength,startTime,endTime,ThresErrorTS] = findTerminalState(tracklong_particle,1);
-
-%% BOTH: slip velocity: neighbor tracks at terminal state
-Rmin = 0;
-Rmax = 5;
-numExp = numel(startTime);
-neighborIdxAll = [];neighborIdxLayer=[];trackTSFront=[];trackTSBack=[];
-
-particle_part = convertTrack(tracklong_particle); 
-tracer_part = convertTrack(tracklong_tracers);% convert from 1*N structure(sorted by different tracks) to 1*1 structure
-
-for kexp = 1:numExp
-    [neighborIdxAllTemp, neighborIdxLayerTemp] = neighbor(particle_part,tracer_part,Rmin,Rmax,kexp);
-
-    [trackTSFrontTemp, trackTSBackTemp]  = neighborAllTS(particle_part,tracer_part,neighborIdxAllTemp,startTime,endTime,kexp);
-
-    nframe(kexp) = numel(neighborIdxAllTemp);
-
-    neighborIdxAll   = [neighborIdxAll;   neighborIdxAllTemp];
-    neighborIdxLayer = [neighborIdxLayer; neighborIdxLayerTemp];
-    trackTSFront  = [trackTSFront;  trackTSFrontTemp];
-    trackTSBack   = [trackTSBack;   trackTSBackTemp];
-
-    % data contained in trackTSFront and trackTSBack: 
-    % coordinates (X,Y,Z,Xf,Yf,Zf) are in particle reference framework (Xf-Xp)
-    % tracers' velocity and acceleration (vx,vy,vz,ax,ay,az) are also
-    % minus by particle's conterpart (tracers.Vx - part.Vx)
-    % a rotaion matrix of each instant time was ALREADY applied to 
-    % the relative coordinates, velocity, acceleration
-
-    clear neighborIdxAllTemp neighborIdxLayerTemp trackTSFrontTemp trackTSBackTemp 
-end
-
-save('./neighborIdx.mat','neighborIdxAll','neighborIdxLayer');
-
-trackTSALL = mergeStructures(trackTSFront, trackTSBack);
-save('./trackTS.mat','trackTSALL','trackTSFront','trackTSBack');
-%% BOTH: make tracking video
-Nexp = 3;
+%% BOTH: tracking video
+nexp = 3;
 trajlen = 100;
 trajincrp = 10;
 trajincrt = 1;
 
-video3Dtraj(particle_part,tracer_part,Nexp,trajlen,trajincrp,trajincrt,Rmin,Rmax);
+video3Dtraj(particle_part,tracer_part,nexp,trajlen,trajincrp,trajincrt,Rmin,Rmax);
 
-clear Nexp trajlen trajincrp trajincrt Rmin
-%% BOTH: slip velocity: INTERPOLATION: meanFields around particle
-dt = [2 4]; % change it if error message show up
-nbins = [3 4 5];
-threshold = 0;
-gridRange.x = [-Rmax Rmax];
-gridRange.y = [-Rmax Rmax];
-gridRange.z = [-Rmax Rmax];
+clear nexp trajlen trajincrp trajincrt Rmin
 
-fpath = pwd;
+%% BOTH: Iterate over experiments
 
-[gridsSlipVeloInterp,slipVeloInterp,trackTSALL] = meanFields(trackTSALL,Fs,dt,nbins,threshold,1,1,gridRange,fpath);
-% [gridsSlipAcceInterp,slipAcceInterp,trackTSALL] = meanFields(trackTSALL,Fs,dt,nbins,threshold,2,1,gridRange,fpath);
+% set the radius range of the 'tracers shell around big particle'
+Rmin = 0;
+Rmax = 10;
 
-save('./slipVeloINTERP.mat','gridsSlipVeloInterp','slipVeloInterp');
+for kexp = 1:Nexp
+    fname = ['tracks_' num2str(kexp) '.mat'];
+    load([fpathT_tracks fname],'tracklong_tracers') % particle's trajectory struct
+    load([fpathP_tracks fname],'tracklong_particle') % tracers's trajectory struct
+    
+    % convert from 1*N structure(sorted by different tracks) to 1*1 structure
+    particle_part = convertTrack(tracklong_particle); 
+    tracer_part = convertTrack(tracklong_tracers);
 
-%% BOTH: slip velocity: INTERPOLATION: visulaize the flow around particle
-slices.x = [0];
-slices.y = [0];
-slices.z = [0];
-axisrange = [-Rmax Rmax -Rmax Rmax -Rmax Rmax];
+    % find terminal state where a ~= 0, set the RelThres to a large value
+    % to include the whole trajectory from the beginning  
+    [maxTimeLength, startTime, endTime, ThresErrorTS] = findTimeRange(particle_part.Ay, 100);
 
-sliceFields(gridsSlipVeloInterp,slipVeloInterp,slices,axisrange,1,1,1)
-savefig_custom(fpath,'slipVALL-interp',8,7)
-% sliceFields(gridsSlipAcceInterp,slipAcceInterp,slices,axisrange,2,1,1)
-% quiverFields(XX,YY,ZZ,mVx,mVy,mVz,axisrange)
-% quiverFields(XX,YY,ZZ,mVx,mVy,mVz,axisrange)
+    % returns the vertical particle settling velcoity in terminal state
+    Vp(kexp,1) = mean(particle_part.Vy(startTime:endTime));
+    
+    % find the index of neighboring tracers of big particle at each frame
+    neighborIdxAll = neighbor(particle_part,tracer_part,Rmin,Rmax,kexp);
+    
+    % returns the relative slip velocity in cylindrical coordinates
+    slipVeloCylind = slipVeloCylinderical(particle_part,tracer_part,neighborIdxAll,startTime,endTime);
 
-%% BOTH: slip velocity: INTERPOLATION: slice of mean surrounding flow
-nSlice = 10;
-rp = 0.5; % mm
-gridSpacing = 0.5; % mm
-nSpacing = 2*Rmax/gridSpacing+1;
-[myMeanSliceInterp,sliceDataInterp] = sliceSlipVelo(gridsSlipVeloInterp,slipVeloInterp,nSlice,rp,Rmax,nSpacing,1,1,1);
+    save([fpathP_slipVeloData filesep 'slipVeloCylind_',num2str(kexp),'.mat'],'neighborIdxAll','slipVeloCylind');
+end
 
-save('./slipVeloINTERP.mat','myMeanSliceInterp','sliceDataInterp','-append');
+% returns the mean vertical settling velocity of the big particle over all videos
+meanVp = mean(Vp);
 
-%% BOTH: slip velocity: fit into BINS
-dt = [2 4]; % change it if error message show up
-nbins = [20 25 30];
+%% BOTH: slip velocity averaged over experiments
 
-[gridsSlipVeloBin,slipVeloBin] = slipVeloBins(trackTSALL,Fs,dt,nbins,1,1);
+% Initialize variables for storing sum and mean of relative velocities
+nbinr = 30;
+nbint = 30;
+sumUrel.x = zeros(nbinr,nbint)*NaN;
+sumUrel.y = zeros(nbinr,nbint)*NaN;
+sumUrel.z = zeros(nbinr,nbint)*NaN;
+sumUrel.norm = zeros(nbinr,nbint)*NaN;
+sumUrel.count = zeros(nbinr,nbint)*NaN;
+meanUrel = sumUrel;
+fieldname = fieldnames(sumUrel);
 
-% [gridsSlipAcceBins,slipAcceBins] = slipVeloBins(trackTSALL,Fs,dt,nbins,2,1,gridRange);
+% Create a spherical mesh
+[rr,tt,~,~,X,Y] = SphericalMesh([Rmin Rmax],nbinr,nbint);
 
-save('./slipVeloBIN.mat','gridsSlipVeloBin','slipVeloBin');
+% Loop over different experiments (kexp)
+for kexp = 1:Nexp 
+    % Load slip velocity data for the current experiment
+    fname = ['slipVeloCylind_',num2str(kexp),'.mat'];
+    load([fpathP_slipVeloData filesep fname],'slipVeloCylind')
+    
+    % Extract relevant columns from slip velocity data
+    rho = vertcat(slipVeloCylind.rho);
+    theta = vertcat(slipVeloCylind.theta);
+    z = vertcat(slipVeloCylind.z);
+    urel = vertcat(slipVeloCylind.Urel);
 
-%% BOTH: slip velocity: fit into BINS: visulaize the flow around particle
-slices.x = [0];
-slices.y = [0];
-slices.z = [0];
-axisrange = [-Rmax Rmax -Rmax Rmax -Rmax Rmax];
+    Urel.x = urel(:,1);
+    Urel.y = urel(:,2);
+    Urel.z = urel(:,3);
+    Urel.norm = cell2mat(arrayfun(@(X) sqrt(X.x.^2+X.y.^2+X.z.^2),Urel,'UniformOutput',false));
 
-sliceFields(gridsSlipVeloBin,slipVeloBin,slices,axisrange,1,1,1)
-savefig_custom(fpath,'slipVALL-bins',8,7)
-% sliceFields(gridsSlipAcceInterp,slipAcceInterp,slices,axisrange,2,1,1)
-% quiverFields(XX,YY,ZZ,mVx,mVy,mVz,axisrange)
-% quiverFields(XX,YY,ZZ,mVx,mVy,mVz,axisrange)
+    % Transform cylindrical coordinates to 2D polar coordinates
+    rho2D = sqrt(rho.^2 + z.^2);
+    theta2D = atan2(rho,z);
 
-%% BOTH: slip velocity: fit into BINS: slice of mean surrounding flow
-nSlice = 10;
-rp = 0.5; % mm
-gridSpacing = 0.5; % mm
-nSpacing = 2*Rmax/gridSpacing+1;
-[myMeanSliceBin,sliceDataBin] = sliceSlipVelo(gridsSlipVeloBin,slipVeloBin,nSlice,rp,Rmax,nSpacing,1,1,1);
+     % Iterate over each bin and calculate the sum of Urel
+    for i = 1:nbinr-1
+        for j = 1:nbint-1
+            ind = find(rho2D >= rr(i) & rho2D < rr(i+1) & theta2D >= tt(j) & theta2D< tt(j+1));
+            if numel(ind)~=0
+                % Initialize sum variables if count is NaN
+                if isnan(sumUrel.count(j,i))
+                    for kf = 1:numel(fieldname)
+                        sumUrel.(fieldname{kf})(j,i) = 0;
+                    end
+                end
+                
+                % Accumulate sum and count values
+                sumUrel.count(j,i) = sumUrel.count(j,i)+numel(ind);
+                for kf = 1:numel(fieldname)-1
+                    sumUrel.(fieldname{kf})(j,i) = sumUrel.(fieldname{kf})(j,i) + sum(Urel.(fieldname{kf})(ind));
+                end
+            end
+        end
+    end
+    % Clear loaded data to free up memory
+    clear slipVeloCylind
+end
 
-save('./slipVeloBIN.mat','myMeanSliceBin','sliceDataBin','-append');
+% Calculate the mean of Urel
+for kf = 1:numel(fieldname)-1
+    meanUrel.(fieldname{kf}) = sumUrel.(fieldname{kf})./sumUrel.count;
+end
+meanUrel.count = sumUrel.count;
 
+%% Plot the binned mean values using pseudocolor
+for kf = 1:numel(fieldname)
+    figure;
+    pcolor(X,Y, meanUrel.(fieldname{kf}));
+%     shading flat; 
+    xlabel('z/mm');
+    ylabel('r/mm');
+    col =colorbar;
+    hold on
+    rectangle('Position', [[0, 0] - 0.5, 2*0.5, 2*0.5], 'Curvature', [1, 1], 'EdgeColor', 'b','FaceColor','k');
+    quiver(0, 0, 2, 0, 0, 'r', 'LineWidth', 2);
+    rectangle('Position', [[0, 0] - 1, 2*1, 2*1], 'Curvature', [1, 1], 'EdgeColor', 'r','LineStyle','--',LineWidth=2);
+    title(fieldname{kf})
+    ylabel(col,'$U_{rel}(mm/s)$','interpreter','latex')
+    savefig_custom(pwd,['slipVelo_' fieldname{kf}],14,7)
+end
