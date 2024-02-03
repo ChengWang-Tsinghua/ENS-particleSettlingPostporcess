@@ -1,27 +1,23 @@
-function mergedStruc = mergeStructures(struct1, struct2)
-    % Merge two structures by concatenating them along fields
+function catStruc = mergeStructures(track_struct)
     
     % Get field names
-    fieldNames1 = fieldnames(struct1);
-    fieldNames2 = fieldnames(struct2);
+    fieldName = fieldnames(track_struct);
 
-    % Ensure both structures have the same fields
-    assert(isequal(fieldNames1, fieldNames2), 'Structures must have the same fields.');
+    n = max(size(track_struct));
 
-    % Initialize the grouped structure with the first structure
-    mergedStruc = struct1;
+    % Initialize the structure with the first element
+    catStruc = track_struct(1);
     
     % Determine the length of the first structure
-    len1 = numel(struct1);
+    
     
     % Process the second structure
-    for j = 1:numel(struct2)
-        % Loop through each field in the second structure
-        for i = 1:numel(fieldNames2)
-            fieldName = fieldNames2{i};
-            
+    for j = 2:n
+        for k = 1:numel(fieldName) 
+            len1 = numel(catStruc.(fieldName{k}));
+            len2 = numel(track_struct(j).(fieldName{k}));
             % Concatenate the field along the rows for each element
-            mergedStruc(len1+j, 1).(fieldName) = struct2(j).(fieldName);
+            catStruc.(fieldName{k})(len1+1:len1+len2, 1) = track_struct(j).(fieldName{k});
         end
     end
 end

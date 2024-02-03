@@ -11,7 +11,7 @@ set(gcf,'PaperSize',[x_width y_width]); %set the paper size to what you want
 
 
 %%
-fname = [fpath filesep name];
+fname = [fpath name];
 savefig(fname)
 saveas(gcf,fname,'pdf')
 if nargin<5
