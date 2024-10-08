@@ -1,1 +1,2 @@
-
+The zip files are previous versions, in whic the calculation of the slip velocity are incorrect ...
+use the latest zip ('DDT_sampleVelocity.zip') which contains sample datasets
